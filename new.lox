@@ -1,0 +1,3 @@
+var character = "s";     
+var string = "string";
+var bool = True;

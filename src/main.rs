@@ -1,3 +1,4 @@
+use lox::run;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -26,9 +27,10 @@ fn main() {
 
             // Uncomment this block to pass the first stage
             if !file_contents.is_empty() {
-                panic!("Scanner not implemented");
+                run(&file_contents);
+                println!();
             } else {
-                println!("EOF null"); // Placeholder, remove this line when implementing the scanner
+                println!("EOF  null"); // Placeholder, remove this line when implementing the scanner
             }
         }
         _ => {

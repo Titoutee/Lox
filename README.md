@@ -1,34 +1,12 @@
-[![progress-banner](https://backend.codecrafters.io/progress/interpreter/6d62f529-0e04-4627-ab7d-77570bd7daed)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+# Lox interpreter
+A simple Lox interpreter, parsing `.lox` source files on the fly.
+Lox is a basic language helping people learn interpreter design.
+It is not really used outside this scope.
 
-This is a starting point for Rust solutions to the
-["Build Your Own Build your own Interpreter" Challenge](https://app.codecrafters.io/courses/interpreter/overview).
+The interpreter uses `peg` for elegant and efficient parsing.
+Writing my own parser was a terrible idea and I convinced myself
+to elude the "bang my head on the table" moment.
 
-_Add a description of your course here_
+There is no top-level instance for the moment, which may come later.
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
-
-# Passing the first stage
-
-The entry point for your `<fill_in_executable_name>` implementation is in
-`src/main.rs`. Study and uncomment the relevant code, and push your changes to
-pass the first stage:
-
-```sh
-git add .
-git commit -m "pass 1st stage" # any msg
-git push origin master
-```
-
-Time to move on to the next stage!
-
-# Stage 2 & beyond
-
-Note: This section is for stages 2 and beyond.
-
-1. Ensure you have `cargo (1.77)` installed locally
-1. Run `./<fill_in_script_name>.sh` to run your program, which is implemented in
-   `src/main.rs`. This command compiles your Rust project, so it might be slow
-   the first time you run it. Subsequent runs will be fast.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+This project is a personal initiative, outside any school project.
