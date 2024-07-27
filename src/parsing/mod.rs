@@ -1,8 +1,8 @@
 use peg;
 pub mod expression;
-pub use expression::{Identifier, Literal, BinOp, Expression, MonoOp};
+pub use expression::{Identifier, Literal, BinOp, Expression, MonOp};
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum Statement {
     VarDeclare(String),
     VarAssign(String, Expression),
@@ -17,14 +17,18 @@ pub enum Statement {
         if_branch: Vec<Statement>,
         else_branch: Option<Vec<Statement>>,
     },
+
     TopLevelConstruct(TopLevelConstruct),
-    // TODO: For, scope, etc.
 }
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum TopLevelConstruct {
     Class(String, Vec<Statement>),
     Function(String, Vec<String>, Vec<Statement>),
+}
+
+pub enum ParseResult {
+    Expression(Expression),
 }
 
 peg::parser! {
@@ -38,10 +42,11 @@ peg::parser! {
             = "\"" s:identifier() "\"" {Literal::String(s.to_owned())}
 
         rule literal_number() -> Literal // Only scalar type in Lox is f64
-            = n:$(['0'..='9']+) {?
+            = n:$(['0'..='9']+ ("." ['0'..='9']*)?) {?
                 let inner = {n.parse::<f64>().or(Err("f64"))?};
                 Ok(Literal::Number(inner))
             }
+            
         rule literal_bool() -> Literal
             = s:identifier() {?
                 match s.as_str() {
@@ -59,22 +64,22 @@ peg::parser! {
             = "var" _ s:identifier() _ {s}
 
         pub(super) rule var_init() -> (Identifier, Expression)
-            = e:var_declare() _ "=" _ v:literal() _ {(e, Expression::Literal(v))}
+            = d:var_declare() _ "=" _ e:expression() _ {(d, e)}
 
         // Used for functions and classes inner statements parsing
         rule inner_statements() -> Vec<Statement>
-            = s:statement() ** _ {s}
+            = _ s:statement() ** _ {s}
 
         rule param_and_args() -> Vec<String>
             = s:$(identifier()+) ** (_ "," _) {s.into_iter().map(|slice| slice.to_owned()).collect()}
 
-        pub(super) rule class() -> (Identifier, Vec<Statement>)
-            = "class" _ c:identifier() _ "{" _ stmts:inner_statements() _ "}" {(c.to_owned(), stmts)}
+        pub(super) rule class() -> (Identifier, Vec<Statement>, Option<Identifier>)
+            = "class" _ c:identifier() p:(_ "<" _ p:identifier() {p})? _ "{" _ stmts:inner_statements() _ "}" {(c.to_owned(), stmts, p)}
 
         pub(super) rule function_def() -> (Identifier, Vec<String>, Vec<Statement>)
             = "fun" _ f:identifier() "(" a:param_and_args() ")" _ "{" _ stmts:inner_statements() _ "}" {(f.to_owned(), a, stmts)}
         
-        pub(super) rule while_b() -> (Expression, Vec<Statement>)
+        pub(super) rule while_() -> (Expression, Vec<Statement>)
             = "while" _ "(" _ e:expression() _ ")" _ "{" _ s:inner_statements() _ "}" {(e, s)}
         
         pub(super) rule if_then_else() -> (Expression, Vec<Statement>, Option<Vec<Statement>>) // "condition";"ifStmts";"elseStatements"
@@ -84,8 +89,8 @@ peg::parser! {
             = i:identifier() "(" a:param_and_args() ")" {(i.to_owned(), a)}
         
         // Core
-        pub rule expression() -> Expression
-            = precedence! {
+        pub(super) rule expression() -> Expression
+                = precedence! {
                 x:(@) _ "==" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Eq }}
                 x:(@) _ ">=" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Ge }}
                 x:(@) _ "<=" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Le }}
@@ -100,6 +105,17 @@ peg::parser! {
                 --
                 x:(@) _ "*" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Mul }}
                 x:(@) _ "/" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Div }}
+                --
+                "-" _ y:@ {Expression::UnaryOp { operation: MonOp::Minus, operand: Box::new(y) }}
+                "!" _ y:@ {Expression::UnaryOp { operation: MonOp::Not, operand: Box::new(y) }}
+                --
+                "(" _ e:expression() _ ")" { e }
+                i:identifier() "(" args:expression() ** (_ "," _) ")" { Expression::FunctionCall { function_name: i, arguments: args } }
+                //i:identifier() { Expression::Object { class_name: i.to_owned() }}
+                i:identifier() "." f:identifier() { Expression::ObjectField { class_name: i.to_owned(), field: f.to_owned() }}
+                // Atoms = max precedence level
+                l:literal() { Expression::Literal(l) }
+                i:identifier() { Expression::Var(i) }
             }
 
         pub(super) rule statement() -> Statement
@@ -107,16 +123,18 @@ peg::parser! {
               / e:var_declare() ";" { Statement::VarDeclare(e) }
               / c:class() { Statement::TopLevelConstruct(TopLevelConstruct::Class(c.0, c.1))}
               / f:function_def() { Statement::TopLevelConstruct(TopLevelConstruct::Function(f.0, f.1, f.2))}
-              / w:while_b() { Statement::While { condition: w.0, body: w.1 }}
+              / w:while_() { Statement::While { condition: w.0, body: w.1 }}
               / i:if_then_else() { Statement::IfThenElse { condition: i.0, if_branch: i.1, else_branch: i.2 }}
-                  
+        
+        pub rule parse() -> Vec<Statement>
+            = _ stmts:statement() ** _ {stmts}
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Expression, Literal};
-    use crate::parsing::{ast_parser, Statement};
+    use crate::parsing::{ast_parser, BinOp, MonOp, Statement};
 
     #[test]
     fn var_empty() {
@@ -220,6 +238,32 @@ mod tests {
     }
 
     #[test]
+    fn var_init_bool_true() {
+        let var_init = "var compound = True;";
+        //assert_eq!(ast_parser::var_init(var_init).unwrap(), String::from("compound"));
+        match ast_parser::statement(var_init).unwrap() {
+            Statement::VarAssign(id, Expression::Literal(Literal::Bool(b)) ) => {
+                assert_eq!(id, String::from("compound"));
+                assert_eq!(b, true);
+            }
+            _ => panic!("Not a var assign"),
+        }
+    }
+
+    #[test]
+    fn var_init_bool_false() {
+        let var_init = "var compound = False;";
+        //assert_eq!(ast_parser::var_init(var_init).unwrap(), String::from("compound"));
+        match ast_parser::statement(var_init).unwrap() {
+            Statement::VarAssign(id, Expression::Literal(Literal::Bool(b)) ) => {
+                assert_eq!(id, String::from("compound"));
+                assert_eq!(b, false);
+            }
+            _ => panic!("Not a var assign"),
+        }
+    }
+
+    #[test]
     fn class() {
         let class_def = "class Heya {
             var init = 12;
@@ -228,7 +272,7 @@ mod tests {
         }";
 
         match ast_parser::class(class_def).unwrap() {
-            (id, statements) => {
+            (id, statements, parent) => {
                 assert_eq!(id, String::from("Heya"));
                 assert_eq!(
                     statements,
@@ -241,19 +285,47 @@ mod tests {
                         Statement::VarDeclare("empty".to_string())
                     ]
                 );
+                assert_eq!(parent, None)
+            }
+        }
+    }
+
+    #[test]
+    fn class_inherit() {
+        let class_def = "class Heya < OtherClass {
+            var init = 12;
+            var lol = \"hey\";
+            var empty;
+        }";
+
+        match ast_parser::class(class_def).unwrap() {
+            (id, statements, parent) => {
+                assert_eq!(id, String::from("Heya"));
+                assert_eq!(
+                    statements,
+                    vec![
+                        Statement::VarAssign("init".to_string(), Expression::Literal(Literal::Number(12.0))),
+                        Statement::VarAssign(
+                            "lol".to_string(),
+                            Expression::Literal(Literal::String("hey".to_string()
+                        ))),
+                        Statement::VarDeclare("empty".to_string())
+                    ]
+                );
+                assert_eq!(parent, Some(String::from("OtherClass")));
             }
         }
     }
 
     #[test]
     fn function() {
-        let class_def = "fun Heya(hey) {
+        let fun_def = "fun Heya(hey) {
             var init = 12;
             var lol = \"hey\";
             var empty;
         }";
 
-        match ast_parser::function_def(class_def).unwrap() {
+        match ast_parser::function_def(fun_def).unwrap() {
             (id, parameters, statements) => {
                 assert_eq!(id, String::from("Heya"));
                 assert_eq!(parameters, vec![String::from("hey")]);
@@ -274,9 +346,9 @@ mod tests {
 
     #[test]
     fn function_call() {
-        let class_def = "my_func(heya, boo)";
+        let fun_call = "my_func(heya, boo)";
 
-        match ast_parser::function_call(class_def).unwrap() {
+        match ast_parser::function_call(fun_call).unwrap() {
             (id, parameters) => {
                 assert_eq!(id, String::from("my_func"));
                 assert_eq!(parameters, vec![String::from("heya"), String::from("boo")]);
@@ -287,13 +359,121 @@ mod tests {
     #[test]
     #[should_panic]
     fn function_call_bad() {
-        let class_def = "my_ func(heya, boo)";
+        let fun_call = "my_ func(heya, boo)";
 
-        match ast_parser::function_call(class_def).unwrap() {
+        match ast_parser::function_call(fun_call).unwrap() {
             (id, parameters) => {
                 assert_eq!(id, String::from("my_func"));
                 assert_eq!(parameters, vec![String::from("heya"), String::from("boo")]);
             }
         }
+    }
+
+    #[test]
+    fn expression_1() {
+        let expr = "1+2";
+        let lhs = Box::new(Expression::Literal(Literal::Number(1.)));
+        let rhs = Box::new(Expression::Literal(Literal::Number(2.)));
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), Expression::BinOperation { lhs, rhs, operator: crate::parsing::BinOp::Plus })
+    }
+
+    #[test]
+    fn expression_2() {
+        let expr = "1*2";
+        let lhs = Box::new(Expression::Literal(Literal::Number(1.)));
+        let rhs = Box::new(Expression::Literal(Literal::Number(2.)));
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), Expression::BinOperation { lhs, rhs, operator: crate::parsing::BinOp::Mul })
+    }
+
+    #[test]
+    fn expression_3() {
+        let expr = "1/2";
+        let lhs = Box::new(Expression::Literal(Literal::Number(1.)));
+        let rhs = Box::new(Expression::Literal(Literal::Number(2.)));
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), Expression::BinOperation { lhs, rhs, operator: crate::parsing::BinOp::Div })
+    }
+
+    // Unary ops tests
+    #[test]
+    fn expression_4() {
+        let expr = "-2";
+        //let lhs = Box::new(Expression::Literal(Literal::Number(1.)));
+        let rhs = Box::new(Expression::Literal(Literal::Number(2.)));
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), Expression::UnaryOp { operation: MonOp::Minus, operand: rhs })
+    }
+
+    #[test]
+    fn expression_5() { // !(Literal::Number) should not work normally, but here parsing only is tested
+        let expr = "!2";
+        //let lhs = Box::new(Expression::Literal(Literal::Number(1.)));
+        let rhs = Box::new(Expression::Literal(Literal::Number(2.)));
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), Expression::UnaryOp { operation: MonOp::Not, operand: rhs })
+    }
+
+    // Precedence tests
+    #[test]
+    fn expression_6() {
+        let expr = "1+2*3";
+        let op_1: Box<Expression> = Box::new(Expression::Literal(Literal::Number(1.)));
+        let op_2 = Box::new(Expression::Literal(Literal::Number(2.)));
+        let op_3 = Box::new(Expression::Literal(Literal::Number(3.)));
+        
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), Expression::BinOperation { lhs: op_1, rhs: Box::new(Expression::BinOperation { lhs: op_2, rhs: op_3, operator: BinOp::Mul }), operator: crate::parsing::BinOp::Plus })
+    }
+    
+    #[test]
+    fn expression_7() {
+        let expr = "(1+2)*3";
+        let op_1: Box<Expression> = Box::new(Expression::Literal(Literal::Number(1.)));
+        let op_2 = Box::new(Expression::Literal(Literal::Number(2.)));
+        let op_3 = Box::new(Expression::Literal(Literal::Number(3.)));
+        
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), Expression::BinOperation { lhs: Box::new(Expression::BinOperation { lhs: op_1, rhs: op_2, operator: BinOp::Plus }), rhs: op_3, operator: crate::parsing::BinOp::Mul })
+    }
+
+    #[test]
+    fn expression_8() {
+        let expr = "(1+2*3)*3";
+        let op_1: Box<Expression> = Box::new(Expression::Literal(Literal::Number(1.)));
+        let op_2 = Box::new(Expression::Literal(Literal::Number(2.)));
+        let op_3 = Box::new(Expression::Literal(Literal::Number(3.)));
+        let op_4 = Box::new(Expression::Literal(Literal::Number(3.)));
+        
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), Expression::BinOperation { lhs: Box::new(Expression::BinOperation { lhs: op_1, rhs: Box::new(Expression::BinOperation { lhs: op_2, rhs: op_3, operator: BinOp::Mul }), operator: BinOp::Plus }), rhs: op_4, operator: crate::parsing::BinOp::Mul })
+    }
+
+    // Variable integration tests
+    #[test]
+    fn expression_9() {
+        let expr = "a+2";
+        let op_1: Box<Expression> = Box::new(Expression::Var(String::from("a")));
+        let op_2 = Box::new(Expression::Literal(Literal::Number(2.)));
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), Expression::BinOperation { lhs: op_1, rhs: op_2, operator: BinOp::Plus })
+    }
+
+    #[test]
+    fn expression_11() {
+        let expr = "a";
+        //let op_1: Box<Expression> = Box::new(Expression::Var(String::from("a")));
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(),  Expression::Var(String::from("a")));
+    }
+
+    // Function calls and object building
+    #[test]
+    fn expression_10() {
+        let expr = "hey(4, a)";
+        let op_1: Expression = Expression::FunctionCall { function_name: String::from("hey"), arguments: vec![Expression::Literal(Literal::Number(4.)), Expression::Var(String::from("a"))] };
+        //println!("{:?}", ast_parser::expression(expr).unwrap());
+        assert_eq!(ast_parser::expression(expr).unwrap(), op_1)
     }
 }

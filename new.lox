@@ -1,3 +1,5 @@
 var character = "s";     
 var string = "string";
 var bool = True;
+var bool = False;
+var bool = True;

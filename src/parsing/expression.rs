@@ -1,6 +1,6 @@
 pub type Identifier = String;
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum Literal {
     String(String),
     Number(f64),
@@ -8,7 +8,7 @@ pub enum Literal {
     Nil
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum BinOp {
     Plus,
     Minus,
@@ -28,13 +28,13 @@ pub enum BinOp {
 }
 
 // For unary operations only
-#[derive(Debug, PartialEq, PartialOrd)]
-pub enum MonoOp {
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub enum MonOp {
     Minus,
     Not,
 }
 
-#[derive(Debug, PartialOrd, PartialEq)]
+#[derive(Debug, PartialOrd, PartialEq, Clone)]
 pub enum Expression {
     Literal(Literal),
     Var(String),
@@ -44,7 +44,7 @@ pub enum Expression {
         operator: BinOp,
     },
     UnaryOp {
-        operation: MonoOp,
+        operation: MonOp,
         operand: Box<Expression>,
     },
     FunctionCall {
@@ -53,6 +53,9 @@ pub enum Expression {
     },
     Object {
         class_name: Identifier,
-        arguments: Vec<Expression>,
+    },
+    ObjectField {
+        class_name: Identifier,
+        field: Identifier,
     }
 }
