@@ -19,6 +19,28 @@ pub enum Statement {
     },
 
     TopLevelConstruct(TopLevelConstruct),
+
+    Return(Expression),
+}
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub params: Vec<String>,
+    pub stmts: Vec<Statement>,
+}
+
+pub enum ExecRes {
+    Normal,
+    Result(Literal),
+}
+
+impl Function {
+    pub fn from(params: Vec<String>, stmts: Vec<Statement>) -> Self {
+        Function {
+            params,
+            stmts
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -76,11 +98,14 @@ peg::parser! {
         pub(super) rule class() -> (Identifier, Vec<Statement>, Option<Identifier>)
             = "class" _ c:identifier() p:(_ "<" _ p:identifier() {p})? _ "{" _ stmts:inner_statements() _ "}" {(c.to_owned(), stmts, p)}
 
-        pub(super) rule function_def() -> (Identifier, Vec<String>, Vec<Statement>)
-            = "fun" _ f:identifier() "(" a:param_and_args() ")" _ "{" _ stmts:inner_statements() _ "}" {(f.to_owned(), a, stmts)}
+        pub(super) rule function_def() -> (String, Function)
+            = "fun" _ f:identifier() "(" a:param_and_args() ")" _ "{" _ stmts:inner_statements() _ "}" {(f, Function::from(a, stmts))}
         
         pub(super) rule while_() -> (Expression, Vec<Statement>)
             = "while" _ "(" _ e:expression() _ ")" _ "{" _ s:inner_statements() _ "}" {(e, s)}
+        
+        pub(super) rule ret() -> Expression
+            = "return" _ e:expression() _ {e}
         
         pub(super) rule if_then_else() -> (Expression, Vec<Statement>, Option<Vec<Statement>>) // "condition";"ifStmts";"elseStatements"
             = "if" _ "(" _ e:expression() _ ")" _ "{" _ i_s:inner_statements() _ "}" _ "else" _ "{" _ e_s:inner_statements() _ "}" {(e, i_s, Some(e_s))}
@@ -119,12 +144,14 @@ peg::parser! {
             }
 
         pub(super) rule statement() -> Statement
-            = i:var_init() ";" { Statement::VarAssign(i.0, i.1) }
-              / e:var_declare() ";" { Statement::VarDeclare(e) }
-              / c:class() { Statement::TopLevelConstruct(TopLevelConstruct::Class(c.0, c.1))}
-              / f:function_def() { Statement::TopLevelConstruct(TopLevelConstruct::Function(f.0, f.1, f.2))}
-              / w:while_() { Statement::While { condition: w.0, body: w.1 }}
-              / i:if_then_else() { Statement::IfThenElse { condition: i.0, if_branch: i.1, else_branch: i.2 }}
+            = i:var_init() ";" _ { Statement::VarAssign(i.0, i.1) }
+              / e:var_declare() ";" _ { Statement::VarDeclare(e) }
+              / r:ret() ";" _ {Statement::Return(r)}
+              / c:class() _ { Statement::TopLevelConstruct(TopLevelConstruct::Class(c.0, c.1))}
+              / f:function_def() _ { Statement::TopLevelConstruct(TopLevelConstruct::Function(f.0, f.1.params, f.1.stmts))}
+              / w:while_() _ { Statement::While { condition: w.0, body: w.1 }}
+              / i:if_then_else() _ { Statement::IfThenElse { condition: i.0, if_branch: i.1, else_branch: i.2 }}
+              
         
         pub rule parse() -> Vec<Statement>
             = _ stmts:statement() ** _ {stmts}
@@ -133,7 +160,7 @@ peg::parser! {
 
 #[cfg(test)]
 mod tests {
-    use super::{Expression, Literal};
+    use super::{Expression, Function, Literal};
     use crate::parsing::{ast_parser, BinOp, MonOp, Statement};
 
     #[test]
@@ -326,11 +353,11 @@ mod tests {
         }";
 
         match ast_parser::function_def(fun_def).unwrap() {
-            (id, parameters, statements) => {
+            (id, Function { params, stmts }) => {
                 assert_eq!(id, String::from("Heya"));
-                assert_eq!(parameters, vec![String::from("hey")]);
+                assert_eq!(params, vec![String::from("hey")]);
                 assert_eq!(
-                    statements,
+                    stmts,
                     vec![
                         Statement::VarAssign("init".to_string(), Expression::Literal(Literal::Number(12.0))),
                         Statement::VarAssign(

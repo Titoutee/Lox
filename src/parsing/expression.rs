@@ -8,6 +8,7 @@ pub enum Literal {
     Nil
 }
 
+// Any binary operation
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum BinOp {
     Plus,

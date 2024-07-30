@@ -21,5 +21,4 @@ fn main() {
         Err(err) => eprintln!("Intepreter failed to run: {}", err),
         _ => println!("{}", interpreter),
     };
-
 }

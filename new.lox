@@ -1,5 +1,6 @@
-var character = "s";     
-var string = "string";
-var bool = True;
-var bool = False;
-var bool = True;
+fun hey(a, b, c) {
+    return a + b + c;
+}
+
+var a = hey(1, 2, 3);
+var b = a;
