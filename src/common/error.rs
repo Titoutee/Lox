@@ -1,12 +1,10 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
-pub struct SyntaxError {
-
-}
-
-pub struct TypeError {
-    
+#[derive(Debug)]
+pub struct InnerError {
+    line: String,
+    error_msg: String,
 }
 
 #[derive(Debug)]
@@ -42,10 +40,10 @@ impl Display for InterpreterError {
 // Matches errors to their respective warning messages, using context
 fn warning(error_type: Rc<InterpreterErrorType>) -> String {
     match *error_type {
-        InterpreterErrorType::SyntaxError => String::from("Syntax error"),
-        InterpreterErrorType::TypeError => String::from("Type error"),
-        InterpreterErrorType::ValueError => String::from("Value error"),
-        InterpreterErrorType::ArgumentCountError => String::from("Function argument error: quantity doesn't match"),
+        InterpreterErrorType::ArgumentCountError => String::from("ArgumentCountError"),
+        InterpreterErrorType::SyntaxError => String::from("SyntaxError"),
+        InterpreterErrorType::TypeError => String::from("TypeError"),
+        InterpreterErrorType::ValueError => String::from("ValueError"),
     }
     // TODO: add context
 }

@@ -11,7 +11,7 @@ fn main() {
         writeln!(stderr_handle, "Usage: {} tokenize <filename>", args[0]).unwrap();
         return;
     }
-
+    
     let filename: &String = &args[1];
     let contents = fs::read_to_string(filename).unwrap();
 

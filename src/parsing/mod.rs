@@ -6,6 +6,7 @@ pub use expression::{Identifier, Literal, BinOp, Expression, MonOp};
 pub enum Statement {
     VarDeclare(String),
     VarAssign(String, Expression),
+    VarReassign(String, Expression),
 
     While {
         condition: Expression,
@@ -21,6 +22,8 @@ pub enum Statement {
     TopLevelConstruct(TopLevelConstruct),
 
     Return(Expression),
+
+    Empty,
 }
 
 #[derive(Debug, Clone)]
@@ -82,11 +85,17 @@ peg::parser! {
             = literal_number() / literal_string() / literal_bool()
 
         // Statements
+        pub (super) rule expr_empty()
+            = _ expression() _
+
         pub(super) rule var_declare() -> Identifier
-            = "var" _ s:identifier() _ {s}
+            = "var" _ i:identifier() _ {i}
 
         pub(super) rule var_init() -> (Identifier, Expression)
             = d:var_declare() _ "=" _ e:expression() _ {(d, e)}
+
+        pub (super) rule var_reassign() -> (Identifier, Expression)
+            = i:identifier() _ "=" _ e:expression() _ {(i, e)}
 
         // Used for functions and classes inner statements parsing
         rule inner_statements() -> Vec<Statement>
@@ -108,7 +117,7 @@ peg::parser! {
             = "return" _ e:expression() _ {e}
         
         pub(super) rule if_then_else() -> (Expression, Vec<Statement>, Option<Vec<Statement>>) // "condition";"ifStmts";"elseStatements"
-            = "if" _ "(" _ e:expression() _ ")" _ "{" _ i_s:inner_statements() _ "}" _ "else" _ "{" _ e_s:inner_statements() _ "}" {(e, i_s, Some(e_s))}
+            = "if" _ "(" _ e:expression() _ ")" _ "{" _ i_s:inner_statements() _ "}" _ e_s:("else" _ "{" _ es:inner_statements() _ "}" {es})? _  {(e, i_s, e_s)}
 
         pub(super) rule function_call() -> (Identifier, Vec<String>)
             = i:identifier() "(" a:param_and_args() ")" {(i.to_owned(), a)}
@@ -146,13 +155,15 @@ peg::parser! {
         pub(super) rule statement() -> Statement
             = i:var_init() ";" _ { Statement::VarAssign(i.0, i.1) }
               / e:var_declare() ";" _ { Statement::VarDeclare(e) }
-              / r:ret() ";" _ {Statement::Return(r)}
-              / c:class() _ { Statement::TopLevelConstruct(TopLevelConstruct::Class(c.0, c.1))}
-              / f:function_def() _ { Statement::TopLevelConstruct(TopLevelConstruct::Function(f.0, f.1.params, f.1.stmts))}
-              / w:while_() _ { Statement::While { condition: w.0, body: w.1 }}
-              / i:if_then_else() _ { Statement::IfThenElse { condition: i.0, if_branch: i.1, else_branch: i.2 }}
-              
+              / a:var_reassign() ";" _ { Statement::VarReassign(a.0, a.1)}
+              / r:ret() ";" _ { Statement::Return(r) }
+              / expr_empty() ";" _ { Statement::Empty }
+              / c:class() _ { Statement::TopLevelConstruct(TopLevelConstruct::Class(c.0, c.1)) }
+              / f:function_def() _ { Statement::TopLevelConstruct(TopLevelConstruct::Function(f.0, f.1.params, f.1.stmts)) }
+              / w:while_() _ { Statement::While { condition: w.0, body: w.1 } }
+              / i:if_then_else() _ { Statement::IfThenElse { condition: i.0, if_branch: i.1, else_branch: i.2 } } 
         
+        // Core parsing procedure
         pub rule parse() -> Vec<Statement>
             = _ stmts:statement() ** _ {stmts}
     }
