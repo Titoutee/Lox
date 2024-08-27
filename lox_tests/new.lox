@@ -1,0 +1,22 @@
+// This small test program performs a Babylonian approximation of the Pythagorean Theorem //
+
+fun approximate_sqrt(n) {
+    var guess = n;
+    var epsilon = 0.00001;
+    while ((guess * guess - n) > epsilon || (n - guess * guess) > epsilon) {
+        guess = (guess + n / guess) / 2;
+    }
+    return guess;
+}
+
+var a = 3;
+var b = 4;
+
+var a_squared = a * a;
+var b_squared = b * b;
+
+var sum_of_squares = a_squared + b_squared;
+
+var hypotenuse = approximate_sqrt(sum_of_squares);
+
+var result = hypotenuse;

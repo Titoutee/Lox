@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use peg;
 pub mod expression;
 pub use expression::{Identifier, Literal, BinOp, Expression, MonOp};
@@ -7,6 +9,10 @@ pub enum Statement {
     VarDeclare(String),
     VarAssign(String, Expression),
     VarReassign(String, Expression),
+
+    Scope {
+        body: Vec<Statement>,
+    },
 
     While {
         condition: Expression,
@@ -27,23 +33,64 @@ pub enum Statement {
 }
 
 #[derive(Debug, Clone)]
+pub struct Var {
+    pub literal: Literal,
+}
+
+impl Var {
+    pub fn from(literal: Literal) -> Self {
+        Var { literal }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Function {
     pub params: Vec<String>,
     pub stmts: Vec<Statement>,
 }
 
-pub enum ExecRes {
-    Normal,
-    Result(Literal),
-}
-
 impl Function {
-    pub fn from(params: Vec<String>, stmts: Vec<Statement>) -> Self {
+    pub fn from(params: Vec<Identifier>, stmts: Vec<Statement>) -> Self {
         Function {
             params,
             stmts
         }
     }
+}
+
+// Defines a class pattern, ready for instantiation
+#[derive(Debug, Clone)]
+pub struct Class {
+    pub methods: HashMap<Identifier, Function>,
+    pub fields: Vec<Identifier>,
+}
+
+impl PartialEq for Class {
+    fn eq(&self, other: &Self) -> bool {
+        self.fields == other.fields && self.methods.len() == other.methods.len()
+    }
+}
+
+impl Class {
+    pub fn new() -> Self {
+        Class {
+            methods: HashMap::new(),
+            fields: vec![],
+        }
+    }
+
+    pub fn add_method(&mut self,id: Identifier, method: Function) {
+        self.methods.insert(id, method);
+    }
+
+    pub fn add_field(&mut self, field: Identifier) {
+        self.fields.push(field);
+    }
+}
+
+pub enum ExecRes {
+    Normal,
+    Result(Literal),
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -52,8 +99,29 @@ pub enum TopLevelConstruct {
     Function(String, Vec<String>, Vec<Statement>),
 }
 
-pub enum ParseResult {
-    Expression(Expression),
+#[derive(Debug, Clone)]
+pub struct Object<'a> {
+    class_pattern: &'a Class,
+    private_fields: Vec<Identifier>,
+}
+
+impl<'a> Object<'a> {
+    pub fn from_pattern(r: &'a Class) -> Self {
+        Object { class_pattern: r, private_fields: vec![]}
+    }
+}
+
+impl<'a> PartialEq for Object<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.class_pattern == other.class_pattern && self.private_fields == other.private_fields
+    }
+}
+
+// Dummy implementation, only for Literal compliance
+impl<'a> PartialOrd for Object<'a> {
+    fn partial_cmp(&self, _other: &Self) -> Option<std::cmp::Ordering> {
+        None
+    }
 }
 
 peg::parser! {
@@ -100,18 +168,27 @@ peg::parser! {
         // Used for functions and classes inner statements parsing
         rule inner_statements() -> Vec<Statement>
             = _ s:statement() ** _ {s}
+        
+        rule string_pack()
+            = _ s:identifier() ** _
+
+        rule scope() -> Vec<Statement>
+            = "{" _ s:inner_statements() _ "}" _ {s}
+        
+        rule comment()
+            = "//" string_pack() "//"
 
         rule param_and_args() -> Vec<String>
             = s:$(identifier()+) ** (_ "," _) {s.into_iter().map(|slice| slice.to_owned()).collect()}
 
         pub(super) rule class() -> (Identifier, Vec<Statement>, Option<Identifier>)
-            = "class" _ c:identifier() p:(_ "<" _ p:identifier() {p})? _ "{" _ stmts:inner_statements() _ "}" {(c.to_owned(), stmts, p)}
+            = "class" _ c:identifier() p:(_ "<" _ p:identifier() {p})? _ stmts:scope() {(c.to_owned(), stmts, p)}
 
         pub(super) rule function_def() -> (String, Function)
-            = "fun" _ f:identifier() "(" a:param_and_args() ")" _ "{" _ stmts:inner_statements() _ "}" {(f, Function::from(a, stmts))}
+            = "fun" _ f:identifier() "(" a:param_and_args() ")" _ stmts:scope() {(f, Function::from(a, stmts))}
         
         pub(super) rule while_() -> (Expression, Vec<Statement>)
-            = "while" _ "(" _ e:expression() _ ")" _ "{" _ s:inner_statements() _ "}" {(e, s)}
+            = "while" _ "(" _ e:expression() _ ")" _ stmts:scope() {(e, stmts)}
         
         pub(super) rule ret() -> Expression
             = "return" _ e:expression() _ {e}
@@ -125,14 +202,15 @@ peg::parser! {
         // Core
         pub(super) rule expression() -> Expression
                 = precedence! {
+                x:(@) _ "||" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Or }}
+                x:(@) _ "&&" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::And }}
+                x:(@) _ "//" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::XOr }}
+                --
                 x:(@) _ "==" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Eq }}
                 x:(@) _ ">=" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Ge }}
                 x:(@) _ "<=" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Le }}
                 x:(@) _ ">" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Gt }}
                 x:(@) _ "<" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Lt }}
-                x:(@) _ "||" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Or }}
-                x:(@) _ "&&" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::And }}
-                x:(@) _ "//" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::XOr }}
                 --
                 x:(@) _ "+" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Plus }}
                 x:(@) _ "-" _ y:@ {Expression::BinOperation { lhs: Box::new(x), rhs: Box::new(y), operator: BinOp::Minus }}
@@ -145,8 +223,8 @@ peg::parser! {
                 --
                 "(" _ e:expression() _ ")" { e }
                 i:identifier() "(" args:expression() ** (_ "," _) ")" { Expression::FunctionCall { function_name: i, arguments: args } }
-                //i:identifier() { Expression::Object { class_name: i.to_owned() }}
-                i:identifier() "." f:identifier() { Expression::ObjectField { class_name: i.to_owned(), field: f.to_owned() }}
+                // i:identifier() { Expression::Object { class_name: i.to_owned() }}
+                // i:identifier() "." f:identifier() { Expression::ObjectField { class_name: i.to_owned(), field: f.to_owned() }}
                 // Atoms = max precedence level
                 l:literal() { Expression::Literal(l) }
                 i:identifier() { Expression::Var(i) }
@@ -158,10 +236,12 @@ peg::parser! {
               / a:var_reassign() ";" _ { Statement::VarReassign(a.0, a.1)}
               / r:ret() ";" _ { Statement::Return(r) }
               / expr_empty() ";" _ { Statement::Empty }
+              / _ comment() _ { Statement::Empty }
               / c:class() _ { Statement::TopLevelConstruct(TopLevelConstruct::Class(c.0, c.1)) }
               / f:function_def() _ { Statement::TopLevelConstruct(TopLevelConstruct::Function(f.0, f.1.params, f.1.stmts)) }
               / w:while_() _ { Statement::While { condition: w.0, body: w.1 } }
               / i:if_then_else() _ { Statement::IfThenElse { condition: i.0, if_branch: i.1, else_branch: i.2 } } 
+              / s:scope() _ { Statement::Scope { body: s }}
         
         // Core parsing procedure
         pub rule parse() -> Vec<Statement>

@@ -1,24 +1,34 @@
 use lox::Interpreter;
-use std::env;
-use std::fs;
-use std::io::{self, Write};
+use std::{fs, process::exit};
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[clap(short, long)]
+    file: String,
+
+    #[clap(short, long, action)]
+    context: bool,
+}
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let mut stderr_handle = io::stderr();
+    let args = Args::parse();
 
-    if args.len() < 2 {
-        writeln!(stderr_handle, "Usage: {} tokenize <filename>", args[0]).unwrap();
-        return;
-    }
-    
-    let filename: &String = &args[1];
-    let contents = fs::read_to_string(filename).unwrap();
+    let contents = if let Ok(s) = fs::read_to_string(args.file) {s} else {
+        eprintln!("File not found!");
+        exit(1);
+    };
 
     let mut interpreter = Interpreter::new();
     interpreter.init(&contents);
+
     match interpreter.run() {
         Err(err) => eprintln!("Intepreter failed to run: {}", err),
-        _ => println!("{}", interpreter),
+        _ => {
+            if args.context {
+                println!("{}", interpreter)
+            }
+        }
     };
 }

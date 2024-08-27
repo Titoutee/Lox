@@ -1,0 +1,8 @@
+class MyClass {
+    var a;
+    var b;
+
+    fun get_a() {
+        return a;
+    }
+}

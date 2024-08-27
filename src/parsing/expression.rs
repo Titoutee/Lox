@@ -1,3 +1,5 @@
+use super::Object;
+
 pub type Identifier = String;
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -55,8 +57,4 @@ pub enum Expression {
     Object {
         class_name: Identifier,
     },
-    ObjectField {
-        class_name: Identifier,
-        field: Identifier,
-    }
 }

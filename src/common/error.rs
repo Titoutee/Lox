@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
+#[allow(unused)]
 #[derive(Debug)]
 pub struct InnerError {
     line: String,
