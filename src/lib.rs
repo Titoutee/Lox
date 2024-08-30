@@ -6,9 +6,10 @@ mod stdlib;
 
 use common::error::{InterpreterError, InterpreterErrorType};
 use parsing::{
-    ast_parser, BinOp, Class, ExecRes, Expression, Function, Identifier, Literal, MonOp, Object,
+    ast_parser, BinOp, Class, ExecRes, Expression, Function, Identifier, Literal, MonOp,
     Statement, TopLevelConstruct, Var,
 };
+use stdlib::StdLib;
 
 pub type IResult<T> = Result<T, InterpreterError>;
 
@@ -110,18 +111,19 @@ impl Env {
         Err(InterpreterError::raise(InterpreterErrorType::ValueError))
     }
 
-    fn class_instantiate(&mut self, key: &Identifier) -> IResult<Object> {
-        let class_pattern: Class = self
-            .extract_class(key)
-            .map_err(|_| InterpreterError::raise(InterpreterErrorType::ValueError))?;
-        Ok(Object::from_pattern(&class_pattern))
-    }
+    //fn class_instantiate(&mut self, key: &Identifier) -> IResult<Object> {
+    //    let class_pattern: Class = self
+    //        .extract_class(key)
+    //        .map_err(|_| InterpreterError::raise(InterpreterErrorType::ValueError))?;
+    //    Ok(Object::from_pattern(&class_pattern))
+    //}
 }
 
 pub struct Interpreter {
     env: Env,
     statements: Vec<Statement>,
     context: ExecCtxt,
+    std: StdLib,
 }
 
 impl Interpreter {
@@ -130,6 +132,7 @@ impl Interpreter {
             env: Env::new(),
             statements: vec![],
             context: ExecCtxt::Global,
+            std: StdLib::new(),
         }
     }
 
@@ -293,18 +296,23 @@ impl Interpreter {
     // "push" and "pop" operations are not called in this context. Rather, a new, fresh stackframe/env is created for each function,
     // and popped at its completion.
     fn eval_fn_call(&mut self, function_id: String, arguments: &[Expression]) -> IResult<Literal> {
+        let mut arg_vals = vec![];
+
+        for arg in arguments {
+            arg_vals.push(self.eval_expr(arg)?);
+        }
+
+        // If std function, call it early
+        if let Some(routine) = self.std.get_routine(&function_id) {
+            return routine.call(arg_vals);
+        }
+        
         let Function { params, stmts } = self.env.extract_fn(&function_id)?;
 
         if arguments.len() != params.len() {
             return Err(InterpreterError::raise(
                 InterpreterErrorType::ArgumentCountError,
             ));
-        }
-
-        let mut arg_vals = vec![];
-
-        for arg in arguments {
-            arg_vals.push(self.eval_expr(arg)?);
         }
 
         let mut local_env = Env::new(); // A new stackframe, as an environment
@@ -358,6 +366,7 @@ impl Interpreter {
             }
             Statement::TopLevelConstruct(construct) => match construct {
                 TopLevelConstruct::Function(id, params, stmts) => {
+                    if let Some(_) = self.std.get_routine(&id) { return Err(InterpreterError::raise(InterpreterErrorType::ValueError)) };
                     self.env.insert_fn(id, Function::from(params, stmts));
                 }
                 TopLevelConstruct::Class(id, stmts) => {
@@ -420,6 +429,9 @@ impl Interpreter {
                 self.scope_pop();
             }
             Statement::Empty => (),
+            Statement::ExprSole(e) => {
+                self.eval_expr(&e).unwrap(); /* Unwrap to raise error if any */
+            }
             Statement::IfThenElse {
                 condition,
                 if_branch,

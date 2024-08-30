@@ -1,4 +1,4 @@
-use super::Object;
+use std::fmt::Display;
 
 pub type Identifier = String;
 
@@ -8,6 +8,17 @@ pub enum Literal {
     Number(f64),
     Bool(bool),
     Nil
+}
+
+impl Display for Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Literal::String(s) => writeln!(f, "{}", s),
+            Literal::Number(n) => writeln!(f, "{}", n),
+            Literal::Bool(b) => writeln!(f, "{}", b),
+            _ => write!(f, ""),
+        }
+    }
 }
 
 // Any binary operation

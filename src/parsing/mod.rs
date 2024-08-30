@@ -29,6 +29,8 @@ pub enum Statement {
 
     Return(Expression),
 
+    ExprSole(Expression),
+
     Empty,
 }
 
@@ -153,8 +155,8 @@ peg::parser! {
             = literal_number() / literal_string() / literal_bool()
 
         // Statements
-        pub (super) rule expr_empty()
-            = _ expression() _
+        pub (super) rule expr_sole() -> Expression
+            = _ e:expression() _ { e }
 
         pub(super) rule var_declare() -> Identifier
             = "var" _ i:identifier() _ {i}
@@ -196,8 +198,6 @@ peg::parser! {
         pub(super) rule if_then_else() -> (Expression, Vec<Statement>, Option<Vec<Statement>>) // "condition";"ifStmts";"elseStatements"
             = "if" _ "(" _ e:expression() _ ")" _ "{" _ i_s:inner_statements() _ "}" _ e_s:("else" _ "{" _ es:inner_statements() _ "}" {es})? _  {(e, i_s, e_s)}
 
-        pub(super) rule function_call() -> (Identifier, Vec<String>)
-            = i:identifier() "(" a:param_and_args() ")" {(i.to_owned(), a)}
         
         // Core
         pub(super) rule expression() -> Expression
@@ -222,7 +222,7 @@ peg::parser! {
                 "!" _ y:@ {Expression::UnaryOp { operation: MonOp::Not, operand: Box::new(y) }}
                 --
                 "(" _ e:expression() _ ")" { e }
-                i:identifier() "(" args:expression() ** (_ "," _) ")" { Expression::FunctionCall { function_name: i, arguments: args } }
+                i:identifier() "(" _ args:expression() ** (_ "," _) _ ")" { Expression::FunctionCall { function_name: i, arguments: args } }
                 // i:identifier() { Expression::Object { class_name: i.to_owned() }}
                 // i:identifier() "." f:identifier() { Expression::ObjectField { class_name: i.to_owned(), field: f.to_owned() }}
                 // Atoms = max precedence level
@@ -235,7 +235,7 @@ peg::parser! {
               / e:var_declare() ";" _ { Statement::VarDeclare(e) }
               / a:var_reassign() ";" _ { Statement::VarReassign(a.0, a.1)}
               / r:ret() ";" _ { Statement::Return(r) }
-              / expr_empty() ";" _ { Statement::Empty }
+              / e:expr_sole() ";" _ { Statement::ExprSole(e) }
               / _ comment() _ { Statement::Empty }
               / c:class() _ { Statement::TopLevelConstruct(TopLevelConstruct::Class(c.0, c.1)) }
               / f:function_def() _ { Statement::TopLevelConstruct(TopLevelConstruct::Function(f.0, f.1.params, f.1.stmts)) }
@@ -458,31 +458,6 @@ mod tests {
                         Statement::VarDeclare("empty".to_string())
                     ]
                 );
-            }
-        }
-    }
-
-    #[test]
-    fn function_call() {
-        let fun_call = "my_func(heya, boo)";
-
-        match ast_parser::function_call(fun_call).unwrap() {
-            (id, parameters) => {
-                assert_eq!(id, String::from("my_func"));
-                assert_eq!(parameters, vec![String::from("heya"), String::from("boo")]);
-            }
-        }
-    }
-
-    #[test]
-    #[should_panic]
-    fn function_call_bad() {
-        let fun_call = "my_ func(heya, boo)";
-
-        match ast_parser::function_call(fun_call).unwrap() {
-            (id, parameters) => {
-                assert_eq!(id, String::from("my_func"));
-                assert_eq!(parameters, vec![String::from("heya"), String::from("boo")]);
             }
         }
     }
