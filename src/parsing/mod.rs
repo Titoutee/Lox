@@ -1,9 +1,15 @@
 use std::collections::HashMap;
-
 use peg;
+
 pub mod expression;
 pub use expression::{Identifier, Literal, BinOp, Expression, MonOp};
 
+
+/// A statement is anything but an expression.
+/// As Lox is imperative, such "statements" exist in parallel to "expressions", which yield a known-value
+/// when executed at runtime.
+/// As the definition suggests, variable declarations, (re)initialisation, as well as elementary blocks (if, while, ...)
+/// are all such "statements".
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum Statement {
     VarDeclare(String),
@@ -34,17 +40,21 @@ pub enum Statement {
     Empty,
 }
 
+/// A variabe is nothing but a stored value.
 #[derive(Debug, Clone)]
 pub struct Var {
     pub literal: Literal,
 }
 
 impl Var {
+    /// Create a variable from a `Literal` value.
     pub fn from(literal: Literal) -> Self {
         Var { literal }
     }
 }
 
+/// A function is characterized by its parameters and its inner statements.
+/// /!\ No naming strategy takes place here, so these can be considered anonymous for now.
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Function {
     pub params: Vec<String>,
@@ -60,7 +70,8 @@ impl Function {
     }
 }
 
-// Defines a class pattern, ready for instantiation
+/// A class pattern, ready for instantiation. Made up of its inner methods and field.
+/// /!\ No naming strategy takes place here, so these can be considered anonymous for now.
 #[derive(Debug, Clone)]
 pub struct Class {
     pub methods: HashMap<Identifier, Function>,
@@ -90,6 +101,7 @@ impl Class {
     }
 }
 
+/// Execution terminating signal.
 pub enum ExecRes {
     Normal,
     Result(Literal),

@@ -11,13 +11,10 @@ fun approximate_sqrt(n) {
 
 var a = 3;
 var b = 4;
-
 var a_squared = a * a;
 var b_squared = b * b;
-
 var sum_of_squares = a_squared + b_squared;
-
 var hypotenuse = approximate_sqrt(sum_of_squares);
-
 var result = hypotenuse;
+
 print(strlen("hey"));

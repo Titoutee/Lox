@@ -1,13 +1,15 @@
 use lox::Interpreter;
-use std::{fs, process::exit};
+use std::fs;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// The file to be interpreted
     #[clap(short, long)]
     file: String,
 
+    /// Whether final context should be displayed (verbose mode)
     #[clap(short, long, action)]
     context: bool,
 }
@@ -17,7 +19,7 @@ fn main() {
 
     let contents = if let Ok(s) = fs::read_to_string(args.file) {s} else {
         eprintln!("File not found!");
-        exit(1);
+        panic!();
     };
 
     let mut interpreter = Interpreter::new();
