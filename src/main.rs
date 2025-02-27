@@ -26,6 +26,7 @@ fn main() {
     interpreter.init(&contents);
 
     match interpreter.run() {
+        // TODO: iuncorporates other variants (expand error handling) 
         Err(err) => eprintln!("Intepreter failed to run: {}", err),
         _ => {
             if args.context {

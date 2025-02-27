@@ -1,18 +1,20 @@
 use std::{collections::HashMap, fmt::Display /*, rc::Rc*/};
 
-mod common;
-mod parsing;
-mod stdlib;
+mod common; // Errors and the such 
+mod parsing; // Parsing mechanism (powered by peg, hopefully)
+mod stdlib; // Lox's core StdLib, embarked with the language
 
 use common::error::{InterpreterError, InterpreterErrorType};
 use parsing::{
-    ast_parser, BinOp, Class, ExecRes, Expression, Function, Identifier, Literal, MonOp,
+    parser, BinOp, Class, ExecRes, Expression, Function, Identifier, Literal, MonOp,
     Statement, TopLevelConstruct, Var,
 };
 use stdlib::StdLib;
 
 pub type IResult<T> = Result<T, InterpreterError>;
 
+
+/// Interpreter state at a given point of execution
 #[derive(Debug, Clone)]
 pub struct Env {
     variables: Vec<HashMap<Identifier, Var>>,
@@ -22,9 +24,13 @@ pub struct Env {
 
 #[derive(PartialEq, Debug)]
 pub enum ExecCtxt {
-    Global,
-    Function, // Return statements should only exist as part of functions
+    Function, // Restrict the use of return statements as part of function bodies only
+    Global // Any other wide context
 }
+
+
+/// Scoping is linear in Lox, which means that when a scope `A` is created within a parent scope `B`, `A` dies 
+/// before any other contact is made with `B`'s body, apart from object accesses (shadowing impl).
 
 impl Env {
     fn new() -> Self {
@@ -35,6 +41,8 @@ impl Env {
         }
     }
 
+    /// Instantiates a new (nested) scope.
+    /// It does exactly this by pushing a new mapping for variables, functions and classes, thus creating a new nested env.
     fn scope_push(&mut self) {
         self.variables.push(HashMap::new());
         self.functions.push(HashMap::new());
@@ -47,21 +55,28 @@ impl Env {
         self.classes.pop();
     }
 
+    /// A variable declaration (without assignation) insertion scheme.
     fn insert_key_default_var(&mut self, key: Identifier) {
         if let Some(current_scope) = self.variables.last_mut() {
             current_scope.insert(key, Var::from(Literal::Number(0.)));
         }
     }
 
+    /// A variable assign insertion scheme.
     fn insert_var(&mut self, key: Identifier, val: Literal) {
-        if let Some(current_scope) = self.variables.last_mut() {
-            current_scope.insert(key, Var::from(val)).map(|_| ());
+        if let Some(current_scope) = self.variables.last_mut() { // Add to current scope
+            current_scope.insert(key /* owned */, Var::from(val)).map(|_| ()); // Buddy mapping
         }
     }
 
+    /// A variable reassign insertion scheme.
+    /// Differs from `insert_var` in that the variable must exist to evolve.
+    /// Also affects the widest scope where a variable with the given identifier resides, which is deep shadowing.
+    /// This implies that an inner scope `A` altering a variable `X` in a parent scope `B` really temporarily
+    /// alters `B`'s instance of the variable.
     fn reassign_var(&mut self, key: &Identifier, val: Literal) -> Option<()> {
-        for scope in self.variables.iter_mut().rev() {
-            if let Some(v) = scope.get_mut(key) {
+        for var_scope in self.variables.iter_mut().rev() {
+            if let Some(v) = var_scope.get_mut(key) {
                 *v = Var::from(val);
                 return Some(());
             }
@@ -70,6 +85,8 @@ impl Env {
     }
 
     // TODO: remove clone calls
+    /// Accesses a variable starting from the narrowest scope up to widest scope.
+    /// This preserves shadowing.
     fn extract_var(&self, key: &Identifier) -> IResult<Literal> {
         for scope in self.variables.iter().rev() {
             if let Some(val) = scope.get(key) {
@@ -79,8 +96,9 @@ impl Env {
         Err(InterpreterError::raise(InterpreterErrorType::ValueError))
     }
 
+    /// New function instantiation.
     fn insert_fn(&mut self, key: Identifier, function: Function) {
-        if let Some(current_scope) = self.functions.last_mut() {
+        if let Some(current_scope) = self.functions.last_mut() { // Add to current scope
             current_scope.insert(key, function);
         }
     }
@@ -136,6 +154,7 @@ impl Interpreter {
         }
     }
 
+    /// Essentially puts the statements into the interpreter's placeholder.
     pub fn init(&mut self, src: &str) {
         self.statements = match self.parse_source(src) {
             Ok(stmts) => stmts,
@@ -145,7 +164,7 @@ impl Interpreter {
 
     // TODO: remove clone calls
     //
-    // Public interface to run the interpreter
+    /// Public interface to run the interpreter
     pub fn run(&mut self) -> IResult<()> {
         let statements = self.statements.clone();
         self.exec_stmts(statements)
@@ -155,7 +174,7 @@ impl Interpreter {
         &self,
         src: &str,
     ) -> Result<Vec<Statement>, peg::error::ParseError<peg::str::LineCol>> {
-        ast_parser::parse(src)
+        parser::parse(src)
     }
 
     // Setup a new environment (within a function or a control logic block)
@@ -174,6 +193,8 @@ impl Interpreter {
     }
 
     // Helper routine to execute statements in chunks
+    /// The master routine to run the contained instructions.
+    /// Thin wrapper over the `execute_statement` separator function.
     fn exec_stmts(&mut self, statements: Vec<Statement>) -> IResult<()> {
         for stmt in statements {
             self.execute_statement(stmt)?;
@@ -351,6 +372,8 @@ impl Interpreter {
     }
 
     // Core routine to execute a statement
+    /// Core of master instruction-executing procedure `exec_stmts`.
+    /// Matches over the different instruction types available within Lox.
     fn execute_statement(&mut self, stmt: Statement) -> IResult<ExecRes> {
         match stmt {
             Statement::VarDeclare(id) => self.env.insert_key_default_var(id),

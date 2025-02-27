@@ -16,10 +16,12 @@ pub enum InterpreterErrorType {
     ArgumentCountError,
 }
 
+/// All the ways the interpreter may fail.
+/// Main API for the error handling mechanism accessible to the main procedure
 #[derive(Debug)]
 pub struct InterpreterError {
     _type: Rc<InterpreterErrorType>,
-    warning: String, // Built according to error _type
+    warning: String, // _type dependant
 }
 
 impl InterpreterError {
@@ -48,4 +50,3 @@ fn warning(error_type: Rc<InterpreterErrorType>) -> String {
     }
     // TODO: add context
 }
-
