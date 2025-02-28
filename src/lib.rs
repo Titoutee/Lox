@@ -1,18 +1,17 @@
 use std::{collections::HashMap, fmt::Display /*, rc::Rc*/};
 
-mod common; // Errors and the such 
+mod common; // Errors and the such
 mod parsing; // Parsing mechanism (powered by peg, hopefully)
 mod stdlib; // Lox's core StdLib, embarked with the language
 
 use common::error::{InterpreterError, InterpreterErrorType};
 use parsing::{
-    parser, BinOp, Class, ExecRes, Expression, Function, Identifier, Literal, MonOp,
-    Statement, TopLevelConstruct, Var,
+    parser, BinOp, Class, ExecRes, Expression, Function, Identifier, Literal, MonOp, Statement,
+    TopLevelConstruct, Var,
 };
 use stdlib::StdLib;
 
 pub type IResult<T> = Result<T, InterpreterError>;
-
 
 /// Interpreter state at a given point of execution
 #[derive(Debug, Clone)]
@@ -25,11 +24,10 @@ pub struct Env {
 #[derive(PartialEq, Debug)]
 pub enum ExecCtxt {
     Function, // Restrict the use of return statements as part of function bodies only
-    Global // Any other wide context
+    Global,   // Any other wide context
 }
 
-
-/// Scoping is linear in Lox, which means that when a scope `A` is created within a parent scope `B`, `A` dies 
+/// Scoping is linear in Lox, which means that when a scope `A` is created within a parent scope `B`, `A` dies
 /// before any other contact is made with `B`'s body, apart from object accesses (shadowing impl).
 
 impl Env {
@@ -64,8 +62,11 @@ impl Env {
 
     /// A variable assign insertion scheme.
     fn insert_var(&mut self, key: Identifier, val: Literal) {
-        if let Some(current_scope) = self.variables.last_mut() { // Add to current scope
-            current_scope.insert(key /* owned */, Var::from(val)).map(|_| ()); // Buddy mapping
+        if let Some(current_scope) = self.variables.last_mut() {
+            // Add to current scope
+            current_scope
+                .insert(key /* owned */, Var::from(val))
+                .map(|_| ()); // Buddy mapping
         }
     }
 
@@ -96,14 +97,16 @@ impl Env {
         Err(InterpreterError::raise(InterpreterErrorType::ValueError))
     }
 
-    /// New function instantiation.
+    /// New function instantiator.
     fn insert_fn(&mut self, key: Identifier, function: Function) {
-        if let Some(current_scope) = self.functions.last_mut() { // Add to current scope
+        if let Some(current_scope) = self.functions.last_mut() {
+            // Add to current scope
             current_scope.insert(key, function);
         }
     }
 
     // TODO: remove clone calls
+    /// Function extractor.
     fn extract_fn(&mut self, key: &Identifier) -> IResult<Function> {
         for scope in self.functions.iter().rev() {
             if let Some(val) = scope.get(key) {
@@ -113,6 +116,7 @@ impl Env {
         Err(InterpreterError::raise(InterpreterErrorType::ValueError))
     }
 
+    /// New class pattern instantiator.
     fn insert_class(&mut self, key: Identifier, class: Class) {
         if let Some(current_scope) = self.classes.last_mut() {
             current_scope.insert(key, class);
@@ -120,6 +124,7 @@ impl Env {
     }
 
     // TODO: remove clone calls
+    /// Class pattern extractor.
     fn extract_class(&mut self, key: &Identifier) -> IResult<Class> {
         for scope in self.classes.iter().rev() {
             if let Some(val) = scope.get(key) {
@@ -154,7 +159,7 @@ impl Interpreter {
         }
     }
 
-    /// Essentially puts the statements into the interpreter's placeholder.
+    /// Flushes the statements into the interpreter's placeholder.
     pub fn init(&mut self, src: &str) {
         self.statements = match self.parse_source(src) {
             Ok(stmts) => stmts,
@@ -164,7 +169,7 @@ impl Interpreter {
 
     // TODO: remove clone calls
     //
-    /// Public interface to run the interpreter
+    /// Public interface to run the interpreter from a `main` point of view.
     pub fn run(&mut self) -> IResult<()> {
         let statements = self.statements.clone();
         self.exec_stmts(statements)
@@ -177,13 +182,8 @@ impl Interpreter {
         parser::parse(src)
     }
 
-    // Setup a new environment (within a function or a control logic block)
-    fn scope_switch(&mut self, new_env: Env) -> Env {
-        std::mem::replace(&mut self.env, new_env)
-    }
-
-    // These are used in contexts where creating a fresh env is not wanted
-    // They thus grow and decrease the environment's inner stacks
+    // These are used in contexts where creating a fresh env is not wanted.
+    // They thus respectively increase and decrease the current environment's inner stacks.
     fn scope_push(&mut self) {
         self.env.scope_push();
     }
@@ -202,8 +202,12 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Main routine for flattening an expression until a final Literal is yielded.
+    // Main routine for flattening an expression until a final Literal is yielded.
     // TODO: remove clone calls
+    /// Flattens an `Expression` until a final `Literal` is yielded.
+    ///
+    /// The said literal is systematically returned wrapped in `IResult`, and an occuring error comes from an underlying
+    /// expression flattening layer.
     fn eval_expr(&mut self, expr: &Expression) -> IResult<Literal> {
         match expr.clone() {
             Expression::Literal(l) => Ok(l.clone()),
@@ -229,6 +233,7 @@ impl Interpreter {
     }
 
     // Evaluate a binoperation
+    /// Flattens a binop.
     fn eval_binop(&self, op: BinOp, lhs: Literal, rhs: Literal) -> IResult<Literal> {
         match op {
             BinOp::Plus => match (lhs, rhs) {
@@ -297,6 +302,7 @@ impl Interpreter {
     }
 
     // Evaluate a monoperation
+    /// Flattens a monop.
     fn eval_monop(&self, op: MonOp, operand: Literal) -> IResult<Literal> {
         match op {
             MonOp::Minus => match operand {
@@ -312,15 +318,13 @@ impl Interpreter {
 
     // TODO: remove clone calls
     //
-    // Scope management in the context of functions differs a bit from how it is for loops, if-then-else
-    // statements and lambda scopes, as regular functions do not capture their environment, thus scope
-    // "push" and "pop" operations are not called in this context. Rather, a new, fresh stackframe/env is created for each function,
-    // and popped at its completion.
+    // Scope management in the context of functions does not differ from how it is for loops, if-then-else
+    // statements and lambda scopes, as regular functions capture their environment.
     fn eval_fn_call(&mut self, function_id: String, arguments: &[Expression]) -> IResult<Literal> {
         let mut arg_vals = vec![];
 
         for arg in arguments {
-            arg_vals.push(self.eval_expr(arg)?);
+            arg_vals.push(self.eval_expr(arg)?); // Expressions are flattened here.
         }
 
         // If std function, call it early
@@ -328,22 +332,24 @@ impl Interpreter {
             return routine.call(arg_vals);
         }
         
+        // Else, is a custom function
         let Function { params, stmts } = self.env.extract_fn(&function_id)?;
+        // /!\ Function identifier is not known.
 
-        if arguments.len() != params.len() {
+        if arguments.len() != params.len() { // /!\ Function argulment count is erroneous.
             return Err(InterpreterError::raise(
                 InterpreterErrorType::ArgumentCountError,
             ));
         }
 
-        let mut local_env = Env::new(); // A new stackframe, as an environment
-
+        self.scope_push();
+        // Allocate parameters and their passed value as argument in the new environment.
         for (param, value) in params.iter().zip(arg_vals) {
-            local_env.insert_var(param.clone(), value);
+            self.env.insert_var(param.clone(), value);
         }
 
-        // Recursive behaviour
-        local_env.insert_fn(
+        // Add itself to its env, to permit recursion.
+        self.env.insert_fn(
             function_id,
             Function {
                 params,
@@ -351,23 +357,21 @@ impl Interpreter {
             },
         );
 
-        let old_env = self.scope_switch(local_env);
         let old_context = std::mem::replace(&mut self.context, ExecCtxt::Function);
 
+        // Execute the funciton.
         for stmt in stmts {
             match self.execute_statement(stmt)? {
                 ExecRes::Normal => (),
                 ExecRes::Result(ret) => {
-                    // Pop off function stackframe and replace with older
-                    self.scope_switch(old_env);
                     self.context = old_context;
+                    self.scope_pop();
                     return Ok(ret); // Exit early out of function
                 }
             }
         }
-        // Pop off function stackframe and replace with older
-        self.scope_switch(old_env);
         self.context = old_context;
+        self.scope_pop();
         Ok(Literal::Nil)
     }
 
@@ -389,7 +393,9 @@ impl Interpreter {
             }
             Statement::TopLevelConstruct(construct) => match construct {
                 TopLevelConstruct::Function(id, params, stmts) => {
-                    if let Some(_) = self.std.get_routine(&id) { return Err(InterpreterError::raise(InterpreterErrorType::ValueError)) };
+                    if let Some(_) = self.std.get_routine(&id) {
+                        return Err(InterpreterError::raise(InterpreterErrorType::ValueError));
+                    };
                     self.env.insert_fn(id, Function::from(params, stmts));
                 }
                 TopLevelConstruct::Class(id, stmts) => {
@@ -423,7 +429,7 @@ impl Interpreter {
                     // Finally add it to env
                     self.env.insert_class(id, class);
                 }
-            }
+            },
             Statement::Return(e) => {
                 if self.context != ExecCtxt::Function {
                     return Err(InterpreterError::raise(InterpreterErrorType::SyntaxError));
